@@ -153,8 +153,14 @@ def render_markdown(primary, restricted, default, sites):
         '- 红果鉴（默认，不带参数）：%d 个站源 —— %s'
         % (len(default), '、'.join(sites[item]['name'] for item in default)),
         '- 真果鉴（`--all-sources`）：%d 个站源 —— 全部' % total,
-        '- 默认可见 %d 个；受限 %d 个，需在「站源管理」里用解锁密码显示。'
-        % (len(primary), len(restricted)),
+        '- 真果鉴默认只显示 %d 个（%s），其余 %d 个默认隐藏。'
+        % (len(primary), '、'.join(sites[item]['name'] for item in primary),
+           len(restricted)),
+        '- 解锁入口：底部导航连点「最近观看」6 次，弹出「站源密码锁」。'
+        '在弹窗里输入密码解锁（仅本次运行有效，重启后重新隐藏）；'
+        '或点「不使用密码」永久显示全部站源。'
+        '「站源管理」页只列出当前已可见的站源，不含解锁入口。'
+        '红果鉴是单源包，没有密码功能。',
         '',
     ])
     return '\n'.join(lines)
