@@ -1,0 +1,42 @@
+name: Refresh pubspec.lock
+
+# pubspec.yaml 改了依赖但忘了提交 pubspec.lock 时，构建脚本里的
+# `flutter pub get --enforce-lockfile` 会直接失败（exit 65）。
+# 这个工作流用与构建完全一致的 Flutter 版本重新生成 lock，产出 artifact 供取回提交。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    name: 重新生成 pubspec.lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - name: flutter pub get
+        run: flutter pub get
+      - name: 对比差异
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- pubspec.lock; then
+            echo "pubspec.lock 与 pubspec.yaml 已经一致，无需更新。" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "pubspec.lock 需要更新，改动如下：" >> "$GITHUB_STEP_SUMMARY"
+            echo '```diff' >> "$GITHUB_STEP_SUMMARY"
+            git diff --stat -- pubspec.lock >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pubspec-lock
+          path: pubspec.lock
+          if-no-files-found: error
+          retention-days: 3
