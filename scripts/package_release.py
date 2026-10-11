@@ -39,18 +39,22 @@ if options.platform == 'android':
         artifacts.append(target)
 else:
     bundle = root / 'build' / 'windows' / 'x64' / 'runner' / 'Release'
-    required = ['zhenguojian.exe', 'duanju_core.dll', 'flutter_windows.dll', 'libffmpegkit.dll',
+    executables = {'hongguojian.exe', 'zhenguojian.exe'}
+    required = ['duanju_core.dll', 'flutter_windows.dll', 'libffmpegkit.dll',
                 'libmpv-2.dll', 'msvcp140.dll', 'vcruntime140.dll',
                 'data/icudtl.dat', 'data/app.so']
     missing = [name for name in required if not (bundle / name).is_file()]
     if missing:
         raise SystemExit('Windows 安装包缺少文件：' + ', '.join(missing))
+    built = sorted(name.name for name in bundle.glob('*.exe') if name.name in executables)
+    if len(built) != 1:
+        raise SystemExit('Windows 构建目录中的主程序不是唯一：' + (', '.join(built) or '未找到'))
     target = output / f'{variant.slug}-{version}-windows-x64.zip'
     with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
         for source in sorted(bundle.rglob('*')):
             if source.is_file():
                 relative = source.relative_to(bundle).as_posix()
-                if relative == 'zhenguojian.exe':
+                if relative == built[0]:
                     relative = variant.slug + '.exe'
                 archive.write(source, relative)
     artifacts.append(target)

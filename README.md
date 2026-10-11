@@ -80,9 +80,11 @@ Flutter 多端独立短剧 / 影视应用，原名「短剧库 APP」。站源�
 
 | 产物 | 内容 |
 | --- | --- |
-| `*-android` | 三种架构 APK 和 SHA256 |
-| `*-windows` | 完整 ZIP 和 SHA256 |
-| `*-ios-unsigned` | 未签名 `.app` ZIP 和 SHA256，不能直接当已签名 IPA 安装 |
+| `hongguojian-android` / `zhenguojian-android` | 三种架构 APK 和 SHA256 |
+| `hongguojian-windows` / `zhenguojian-windows` | 完整 ZIP 和 SHA256 |
+| `hongguojian-ios` / `zhenguojian-ios` | 未签名 `.app` 压缩包、未签名 IPA 和 SHA256，不能直接当已签名 IPA 安装 |
+
+运行开始先执行 **站源清单** job，把两版的全部站源列进运行摘要；每个构建 job 的日志里也会打印一遍，Release 说明末尾附同一份清单。清单由 `scripts/list_sources.py` 解析 `lib/models.dart` 生成，解析失败会让运行直接失败，不会给出空清单或残缺清单。
 
 推送 `main` 且 android / ios / windows 全部构建成功时，自动创建 / 更新 GitHub Release（tag `app-v{version}`）。发布新版本前需先在 `pubspec.yaml` 提升 `version`，否则会覆盖同名 tag 的 Release。
 

@@ -19,7 +19,22 @@ env:
   GOSUMDB: sum.golang.org
 
 jobs:
+  # 先把站源清单打出来，所有构建 job 都以它为准；解析失败会直接失败，
+  # 避免出现「清单是空的但构建照跑」这种看不出问题的结果。
+  sources:
+    name: 站源清单
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 列出全部站源
+        run: python scripts/list_sources.py --summary "$GITHUB_STEP_SUMMARY"
+
   checks:
+    needs: sources
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -53,6 +68,7 @@ jobs:
         continue-on-error: true
 
   android:
+    needs: sources
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -87,6 +103,8 @@ jobs:
           packages: "platforms;android-36"
           accept-android-sdk-licenses: true
       - run: sdkmanager 'ndk;28.2.13676358'
+      - name: 列出全部站源
+        run: python scripts/list_sources.py
       - name: Configure Android signing
         id: signing
         run: |
@@ -138,26 +156,10 @@ jobs:
           path: dist/android/*
           if-no-files-found: error
           retention-days: 14
-  windows:
-    if: false
-    needs: checks
-    runs-on: windows-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - edition: hongguojian
-            arguments: ''
-          - edition: zhenguojian
-            arguments: '--all-sources'
-    steps:
-      - uses: actions/checkout@v4
 
-  ios:
-    if: false
-    needs: checks
-    runs-on: macos-latest
+  windows:
+    needs: [sources, checks]
+    runs-on: windows-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -169,19 +171,97 @@ jobs:
             arguments: '--all-sources'
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      # 原生核心用 CGO 编成 duanju_core.dll，需要 MinGW-w64 的 x86_64-w64-mingw32-gcc。
+      - name: 安装 MinGW-w64
+        shell: pwsh
+        run: |
+          choco install mingw --no-progress -y
+          where.exe x86_64-w64-mingw32-gcc
+      - name: 列出全部站源
+        shell: pwsh
+        run: python scripts/list_sources.py
+      - name: 构建 Windows 包
+        run: python scripts/build_windows.py ${{ matrix.arguments }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.edition }}-windows
+          path: dist/windows/*
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    needs: [sources, checks]
+    runs-on: macos-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: hongguojian
+            arguments: ''
+          - edition: zhenguojian
+            arguments: '--all-sources'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - name: 确保 CocoaPods 可用
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            gem install cocoapods --no-document
+          fi
+          pod --version
+      - name: 列出全部站源
+        run: python scripts/list_sources.py
+      # 不签名：产物是未签名 .app 压缩包与未签名 IPA，供自行签名后安装。
+      - name: 构建 iOS 包（未签名）
+        run: python scripts/build_ios.py ${{ matrix.arguments }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.edition }}-ios
+          path: dist/ios/*
+          if-no-files-found: error
+          retention-days: 14
 
   release:
-    needs: [android]
-    if: always() && needs.android.result == 'success'
+    needs: [android, windows, ios]
+    if: always() && !cancelled() && needs.android.result == 'success' && needs.windows.result == 'success' && needs.ios.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      - name: 生成站源清单
+        run: python scripts/list_sources.py --summary "$GITHUB_STEP_SUMMARY" > sources.md
       - name: 生成发布文件清单
         run: |
           set -euo pipefail
@@ -233,6 +313,8 @@ jobs:
             else
               printf '%s\n' "签名证书：未配置（当前为 debug 签名）"
             fi
+            printf '\n'
+            cat sources.md
           } > notes.md
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" release/* --clobber
